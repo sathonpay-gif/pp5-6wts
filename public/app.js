@@ -1055,7 +1055,7 @@ async function runCsvImport(fnName){
 
 showLogin();if(state.token)openApp();
 
-/* ===================== ปพ.5 module (v4 — กันเลข "ข้อที่" ซ้ำที่ทำคะแนนหาย) ===================== */
+/* ===================== ปพ.5 module (v5 — แก้ getPP5ScoreItems ชื่อฟิลด์ไม่ตรง ทำ "ข้อ undefined") ===================== */
 
 const PP5_MARK_CYCLE = ['/', 'ป', 'ล', 'ข', ''];
 
@@ -1267,8 +1267,8 @@ async function openPP5ItemsModal() {
   const id = window._pp5AssignmentId; if (!id) return;
   const [indicators, items] = await Promise.all([call('getPP5Indicators', state.token, id), call('getPP5ScoreItems', state.token, id)]);
   const merged = indicators.length ? indicators.map(ind => {
-    const it = items.find(i => String(i.IndicatorNo) === String(ind.No)) || {};
-    return { no: ind.No, standard: ind.Standard, text: ind.Text, label: it.Label || '', maxScore: it.MaxScore ?? '' };
+    const it = items.find(i => String(i.indicatorNo) === String(ind.No)) || {};
+    return { no: ind.No, standard: ind.Standard, text: ind.Text, label: it.label || '', maxScore: it.maxScore ?? '' };
   }) : [{ no: 1, standard: '', text: '', label: '', maxScore: '' }];
   $('page').insertAdjacentHTML('beforeend', `<div class="modal" id="pp5ItemsModal"><div class="modal-card" style="max-width:760px">
     <h3>ตัวชี้วัด และ คะแนนเต็มรายข้อ</h3>
