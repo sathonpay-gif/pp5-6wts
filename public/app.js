@@ -1055,7 +1055,7 @@ async function runCsvImport(fnName){
 
 showLogin();if(state.token)openApp();
 
-/* ===================== ปพ.5 module (v3 — แก้บั๊ก Enrollment ไม่ลิงก์ + เพิ่ม CSV) ===================== */
+/* ===================== ปพ.5 module (v4 — กันเลข "ข้อที่" ซ้ำที่ทำคะแนนหาย) ===================== */
 
 const PP5_MARK_CYCLE = ['/', 'ป', 'ล', 'ข', ''];
 
@@ -1101,8 +1101,15 @@ function pp5ItemSumWarningHtml(data) {
   return `<span class="alert-inline" style="display:inline-block;background:#fff8e1;color:#8a6100;border:1px solid #ffe08a">ยังขาดอีก ${round2Local_(during - itemSum)} คะแนน จากคะแนนระหว่างเรียน ${during}</span>`;
 }
 
+function pp5DuplicateNoWarningHtml(data) {
+  const nos = data.items.map(i => String(i.indicatorNo));
+  const dups = [...new Set(nos.filter((n, idx) => nos.indexOf(n) !== idx))];
+  if (!dups.length) return '';
+  return `<div class="alert-inline alert-danger" style="display:block;margin-bottom:8px">⚠ พบเลข "ข้อที่" ซ้ำกัน (ข้อ ${dups.map(escapeHtml).join(', ')}) — คะแนนของข้อที่ซ้ำกันจะถูกเขียนทับกันตอนบันทึก ทำให้ยอดรวมที่บันทึกจริงน้อยกว่าที่เห็นบนจอ กรุณากด "📋 ตัวชี้วัด/คะแนนเต็ม" แล้วแก้เลขให้ไม่ซ้ำกันก่อนบันทึกคะแนน</div>`;
+}
+
 function renderPP5Info(data) {
-  $('pp5Info').innerHTML = `<div class="toolbar" style="margin-bottom:8px">
+  $('pp5Info').innerHTML = `${pp5DuplicateNoWarningHtml(data)}<div class="toolbar" style="margin-bottom:8px">
     <span class="alert-inline alert-ok" style="display:inline-block">ประเภทวิชา: ${escapeHtml(data.subjectType)}</span>
     <span class="alert-inline" style="display:inline-block;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe">สัดส่วน ระหว่างเรียน ${data.config.duringRatio} : กลางภาค ${data.config.midtermRatio} : ปลายภาค ${data.config.finalRatio}</span>
     ${pp5ItemSumWarningHtml(data)}
@@ -1286,6 +1293,9 @@ async function savePP5ItemsFromModal() {
     text: tr.querySelector('.pp5i-text').value,
     maxScore: Number(tr.querySelector('.pp5i-max').value) || 0
   }));
+  const nos = rows.map(r => r.no);
+  const dup = nos.find((n, idx) => nos.indexOf(n) !== idx);
+  if (dup !== undefined) return toast('มีเลข "ข้อที่" ซ้ำกัน (ข้อ ' + dup + ') — คะแนนของข้อที่ซ้ำจะเขียนทับกันตอนบันทึก กรุณาแก้เลขให้ไม่ซ้ำก่อน');
   const indicators = rows.map(r => ({ no: r.no, standard: r.standard, text: r.text }));
   const items = rows.map(r => ({ indicatorNo: r.no, label: r.text, maxScore: r.maxScore }));
   try {
