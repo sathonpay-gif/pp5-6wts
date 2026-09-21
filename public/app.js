@@ -1055,7 +1055,7 @@ async function runCsvImport(fnName){
 
 showLogin();if(state.token)openApp();
 
-/* ===================== ปพ.5 module (รวมเข้ากับ app.js แล้ว — v2 แก้บั๊กชื่อ/สถานะไม่แสดง) ===================== */
+/* ===================== ปพ.5 module (v3 — แก้บั๊ก Enrollment ไม่ลิงก์ + เพิ่ม CSV) ===================== */
 
 const PP5_MARK_CYCLE = ['/', 'ป', 'ล', 'ข', ''];
 
@@ -1070,6 +1070,9 @@ async function renderPP5(p) {
     <button class="btn btn-secondary" onclick="openPP5ItemsModal()" id="pp5ItemsBtn" disabled>📋 ตัวชี้วัด/คะแนนเต็ม</button>
     <button class="btn btn-secondary" onclick="openPP5AttendanceModal()" id="pp5AttBtn" disabled>⏱ เวลาเรียน</button>
     <button id="pp5SaveBtn" class="btn btn-primary" onclick="savePP5ScoreGrid()" disabled>บันทึกคะแนน</button>
+    <button class="btn btn-secondary" onclick="downloadPP5Csv()" id="pp5CsvDownloadBtn" disabled>📥 ดาวน์โหลด CSV</button>
+    <button class="btn btn-secondary" onclick="$('pp5CsvFileInput').click()" id="pp5CsvImportBtn" disabled>📤 นำเข้า CSV</button>
+    <input type="file" id="pp5CsvFileInput" accept=".csv" style="display:none" onchange="importPP5Csv(this.files[0])">
   </div>
   <div id="pp5Info"></div>
   <div id="pp5Grid" class="table-wrap"></div>
@@ -1081,7 +1084,7 @@ async function renderPP5(p) {
 /* ---------------- โหลดข้อมูลวิชา + วาดตาราง ---------------- */
 async function loadPP5Workspace() {
   const id = $('pp5AssignSelect').value;
-  ['pp5ConfigBtn', 'pp5ItemsBtn', 'pp5AttBtn', 'pp5SaveBtn'].forEach(b => $(b).disabled = !id);
+  ['pp5ConfigBtn', 'pp5ItemsBtn', 'pp5AttBtn', 'pp5SaveBtn', 'pp5CsvDownloadBtn', 'pp5CsvImportBtn'].forEach(b => $(b).disabled = !id);
   if (!id) { $('pp5Grid').innerHTML = ''; $('pp5Info').innerHTML = ''; $('pp5Stats').innerHTML = ''; return; }
   $('pp5Grid').innerHTML = ''; $('pp5Grid').appendChild(showSpinner());
   const data = await call('getPP5ScoreEntry', state.token, id);
@@ -1118,7 +1121,7 @@ function renderPP5Grid(data) {
   const rows = data.rows.map(r => {
     const disabled = r.status === 'ขาดเรียนนาน' || r.status === 'ย้ายออก';
     const itemCells = items.map(it => `<td><input class="score-input pp5-item" data-item="${escapeHtml(String(it.indicatorNo))}" data-max="${it.maxScore}" type="number" min="0" max="${it.maxScore}" step="0.01" value="${r.itemScores[it.indicatorNo] ?? ''}" ${disabled ? 'disabled' : ''}></td>`).join('');
-    return `<tr data-enr="${escapeHtml(r.enrollmentId || '')}" data-student="${escapeHtml(r.studentId)}">
+    return `<tr data-enr="${escapeHtml(r.enrollmentId || '')}" data-student="${escapeHtml(r.studentId)}" data-code="${escapeHtml(r.studentCode || '')}">
       <td>${escapeHtml(String(r.classNo))}</td>
       <td class="l">${escapeHtml(r.fullName)}</td>
       <td>${pp5StatusSelectHtml(r)}</td>
@@ -1291,6 +1294,81 @@ async function savePP5ItemsFromModal() {
     closeModal('pp5ItemsModal');
     await loadPP5Workspace();
   } catch (e) { toast(e.message); }
+}
+
+/* ---------------- CSV ดาวน์โหลด / นำเข้า (spec ข้อ 9 แบบย่อ) ----------------
+ * รูปแบบคอลัมน์: รหัสนักเรียน,เลขที่,ชื่อ-สกุล,<label ของแต่ละข้อตามลำดับที่ตั้งไว้...>,กลางภาค,ปลายภาค,ร
+ * ใช้ "รหัสนักเรียน" เป็นคีย์จับคู่ตอนนำเข้า (ไม่สนลำดับแถวใน CSV) กันกรณีสลับแถว/เรียงเลขที่ใหม่
+ * นำเข้าแล้ว "ยังไม่บันทึกลงฐานข้อมูลทันที" — แค่เติมค่าลงตารางบนจอ ครูต้องกดปุ่ม
+ * "บันทึกคะแนน" เองอีกครั้งเพื่อยืนยัน กันการนำเข้าไฟล์ผิดแล้วทับข้อมูลจริงโดยไม่ได้ตั้งใจ
+ */
+function pp5CsvField_(v) {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function downloadPP5Csv() {
+  const data = window._pp5Data; if (!data) return;
+  const header = ['รหัสนักเรียน', 'เลขที่', 'ชื่อ-สกุล', ...data.items.map(it => (it.label || ('ข้อ' + it.indicatorNo))), 'กลางภาค', 'ปลายภาค', 'ร'];
+  const lines = [header.map(pp5CsvField_).join(',')];
+  document.querySelectorAll('#pp5Grid tbody tr').forEach(tr => {
+    const itemVals = [...tr.querySelectorAll('.pp5-item')].map(i => i.value);
+    const row = [tr.dataset.code, tr.children[0].textContent.trim(), tr.querySelector('td.l').textContent.trim(),
+      ...itemVals, tr.querySelector('.pp5-mid').value, tr.querySelector('.pp5-final').value, tr.querySelector('.pp5-incomplete').checked ? '1' : ''];
+    lines.push(row.map(pp5CsvField_).join(','));
+  });
+  const csv = '\uFEFF' + lines.join('\r\n'); // ★ ใส่ BOM กัน Excel เปิดภาษาไทยเป็นตัวอักษรมั่ว
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pp5_คะแนน_' + (data.items.length ? data.items.length + 'ข้อ_' : '') + Date.now() + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+// parser CSV แบบง่าย รองรับ field ที่ครอบด้วย " และ comma/ขึ้นบรรทัดใหม่ในเครื่องหมายคำพูด
+function pp5ParseCsv_(text) {
+  const rows = []; let row = [], field = '', inQuotes = false;
+  text = text.replace(/^\uFEFF/, '');
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(field); field = ''; rows.push(row); row = []; }
+    else field += c;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.length > 1 || r[0] !== '');
+}
+
+function importPP5Csv(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rows = pp5ParseCsv_(String(reader.result));
+    if (rows.length < 2) return toast('ไฟล์ CSV ว่างเปล่าหรืออ่านไม่ได้');
+    const items = window._pp5Data.items;
+    const body = rows.slice(1); // แถวแรกเป็นหัวคอลัมน์ ข้ามไป
+    let matched = 0, unmatched = [];
+    body.forEach(cols => {
+      const code = (cols[0] || '').trim();
+      const tr = document.querySelector(`#pp5Grid tbody tr[data-code="${CSS.escape(code)}"]`);
+      if (!tr) { if (code) unmatched.push(code); return; }
+      const itemInputs = [...tr.querySelectorAll('.pp5-item')];
+      items.forEach((it, idx) => { if (itemInputs[idx] && cols[3 + idx] !== undefined && cols[3 + idx] !== '') itemInputs[idx].value = cols[3 + idx]; });
+      const midIdx = 3 + items.length, finIdx = midIdx + 1, incIdx = finIdx + 1;
+      if (cols[midIdx] !== undefined && cols[midIdx] !== '') tr.querySelector('.pp5-mid').value = cols[midIdx];
+      if (cols[finIdx] !== undefined && cols[finIdx] !== '') tr.querySelector('.pp5-final').value = cols[finIdx];
+      if (cols[incIdx] !== undefined) tr.querySelector('.pp5-incomplete').checked = ['1', 'true', 'TRUE', 'ใช่'].includes((cols[incIdx] || '').trim());
+      matched++;
+    });
+    pp5RecalcTotals();
+    toast(`นำเข้าแล้ว ${matched} คน` + (unmatched.length ? ` — ไม่พบรหัสนี้ในห้อง ${unmatched.length} รายการ: ${unmatched.slice(0, 5).join(', ')}${unmatched.length > 5 ? '...' : ''}` : '') + ' — ตรวจทานแล้วอย่าลืมกด "บันทึกคะแนน"', unmatched.length === 0);
+    $('pp5CsvFileInput').value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
 }
 
 /* ---------------- helper เลขทศนิยม (ฝั่ง client เอาไว้โชว์ผลรวมสด — ตัวเลขจริงคำนวณซ้ำฝั่งเซิร์ฟเวอร์เสมอ) ---------------- */
