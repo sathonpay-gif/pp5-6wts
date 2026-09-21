@@ -1055,7 +1055,7 @@ async function runCsvImport(fnName){
 
 showLogin();if(state.token)openApp();
 
-/* ===================== ปพ.5 module (รวมเข้ากับ app.js แล้ว) ===================== */
+/* ===================== ปพ.5 module (รวมเข้ากับ app.js แล้ว — v2 แก้บั๊กชื่อ/สถานะไม่แสดง) ===================== */
 
 const PP5_MARK_CYCLE = ['/', 'ป', 'ล', 'ข', ''];
 
@@ -1106,6 +1106,12 @@ function renderPP5Info(data) {
   </div>`;
 }
 
+function pp5StatusSelectHtml(r) {
+  const opts = ['', 'ขาดเรียนนาน', 'เด็กพิเศษ', 'ย้ายออก', 'พักการเรียน'];
+  const labels = { '': 'ปกติ', 'ขาดเรียนนาน': 'ขาดเรียนนาน', 'เด็กพิเศษ': 'เด็กพิเศษ', 'ย้ายออก': 'ย้ายออก', 'พักการเรียน': 'พักการเรียน' };
+  return `<select class="pp5-status-select" onchange="savePP5StatusInline(this)">${opts.map(o => `<option value="${escapeHtml(o)}" ${((r.status || '') === o) ? 'selected' : ''}>${escapeHtml(labels[o])}</option>`).join('')}</select>`;
+}
+
 function renderPP5Grid(data) {
   const items = data.items;
   const itemHeadCols = items.map(it => `<th title="${escapeHtml(it.label)}">ข้อ ${escapeHtml(String(it.indicatorNo))}<br><small>${it.maxScore}</small></th>`).join('');
@@ -1114,7 +1120,8 @@ function renderPP5Grid(data) {
     const itemCells = items.map(it => `<td><input class="score-input pp5-item" data-item="${escapeHtml(String(it.indicatorNo))}" data-max="${it.maxScore}" type="number" min="0" max="${it.maxScore}" step="0.01" value="${r.itemScores[it.indicatorNo] ?? ''}" ${disabled ? 'disabled' : ''}></td>`).join('');
     return `<tr data-enr="${escapeHtml(r.enrollmentId || '')}" data-student="${escapeHtml(r.studentId)}">
       <td>${escapeHtml(String(r.classNo))}</td>
-      <td class="l">${escapeHtml(r.fullName)}${r.status ? `<br><small class="muted">${escapeHtml(r.status)}</small>` : ''}</td>
+      <td class="l">${escapeHtml(r.fullName)}</td>
+      <td>${pp5StatusSelectHtml(r)}</td>
       ${itemCells}
       <td><input class="score-input pp5-mid" type="number" min="0" step="0.01" value="${r.midterm ?? ''}" ${disabled ? 'disabled' : ''}></td>
       <td><input class="score-input pp5-final" type="number" min="0" step="0.01" value="${r.final ?? ''}" ${disabled ? 'disabled' : ''}></td>
@@ -1122,8 +1129,8 @@ function renderPP5Grid(data) {
       <td><input type="checkbox" class="pp5-incomplete" ${r.incomplete ? 'checked' : ''} title="ติด ร (ส่งไม่ครบ)" ${disabled ? 'disabled' : ''}></td>
     </tr>`;
   }).join('');
-  $('pp5Grid').innerHTML = `<table class="data-table pp5-score-table"><thead>${periodHeadRow(6 + items.length)}
-    <tr><th>ที่</th><th>ชื่อ-สกุล</th>${itemHeadCols}<th>กลางภาค</th><th>ปลายภาค</th><th>รวม</th><th>ร</th></tr>
+  $('pp5Grid').innerHTML = `<table class="data-table pp5-score-table"><thead>${periodHeadRow(7 + items.length)}
+    <tr><th>ที่</th><th>ชื่อ-สกุล</th><th>สถานะ</th>${itemHeadCols}<th>กลางภาค</th><th>ปลายภาค</th><th>รวม</th><th>ร</th></tr>
     </thead><tbody>${rows}</tbody></table>`;
   pp5AttachGridBehaviour();
   pp5RecalcTotals();
@@ -1183,6 +1190,17 @@ async function savePP5ScoreGrid() {
     await loadPP5Workspace();
   } catch (e) { toast(e.message); }
   finally { btn.disabled = false; btn.textContent = orig; }
+}
+
+async function savePP5StatusInline(sel) {
+  const tr = sel.closest('tr');
+  const studentId = tr.dataset.student;
+  try {
+    const r = await call('savePP5StudentStatus', state.token, window._pp5AssignmentId, studentId, sel.value);
+    toast('บันทึกสถานะนักเรียนแล้ว', true);
+    pp5RenderStats(r.stats);
+    await loadPP5Workspace();
+  } catch (e) { toast(e.message); }
 }
 
 function pp5RenderStats(stats) {
